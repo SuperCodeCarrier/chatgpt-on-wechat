@@ -49,6 +49,16 @@ COMMANDS = {
         "alias": ["reset", "重置会话"],
         "desc": "重置会话",
     },
+    "set_model": {
+        "alias": ["set_model"],
+        "args": ["model_name", "set_public_config"],
+        "desc": "设置使用的大语言模型",
+    },
+    "set_config": {
+        "alias": ["set_config"],
+        "args": ["key", "value", "set_public_config"],
+        "desc": "重设配置项（仅限root用户使用）",
+    }
 }
 
 ADMIN_COMMANDS = {
@@ -201,6 +211,7 @@ class Godcmd(Plugin):
             if not self.isrunning:
                 e_context.action = EventAction.BREAK_PASS
             return
+                
 
         content = e_context["context"].content
         logger.debug("[Godcmd] on_handle_context. content: %s" % content)
@@ -212,6 +223,20 @@ class Godcmd(Plugin):
                 e_context["reply"] = reply
                 e_context.action = EventAction.BREAK_PASS
                 return
+            
+            # 检查用户是否有查看/使用 bot 命令的权限
+            nickname = e_context.econtext.get("context").get("from_user_nickname")
+            if nickname is None:
+                is_root_user = False
+            else:
+                is_root_user = conf().get(nickname, "is_root", False)
+            if not is_root_user:
+                trigger_prefix = conf().get("plugin_trigger_prefix", "$")
+                if trigger_prefix == "#":  # 跟插件聊天指令前缀相同，继续递交
+                    return
+                e_context.action = EventAction.BREAK_PASS
+                return
+        
             # msg = e_context['context']['msg']
             channel = e_context["channel"]
             user = e_context["context"]["receiver"]
@@ -228,6 +253,7 @@ class Godcmd(Plugin):
                 isadmin = True
             ok = False
             result = "string"
+            
             if any(cmd in info["alias"] for info in COMMANDS.values()):
                 cmd = next(c for c, info in COMMANDS.items() if cmd in info["alias"])
                 if cmd == "auth":
@@ -271,6 +297,26 @@ class Godcmd(Plugin):
                         ok, result = True, "会话已重置"
                     else:
                         ok, result = False, "当前对话机器人不支持重置会话"
+                if cmd == "set_model": 
+                    if len(args) == 2:
+                        conf().set_config("model", args[0])
+                        ok, result = True, "模型设置成功{}".format(args[0])
+                    elif len(args) == 1:
+                        conf().set_config("model", args[0], nickname)
+                        ok, result = True, "模型设置成功{}".format(args[0])
+                    else:
+                        ok, result = False, "请提供一个可用model"
+                elif cmd == "set_config":
+                    if len(args) == 3:
+                        conf().set_config(args[0], args[1])
+                        ok, result = True, "配置项设置成功{}: {}".format(args[0], args[1])
+                    elif len(args) == 2:
+                        conf().set_config(args[0], args[1], nickname)
+                        ok, result = True, "配置项设置成功{}: {}".format(args[0], args[1])
+                    else:
+                        ok, result = False, "请提供配置项值"
+                    
+
                 logger.debug("[Godcmd] command: %s by %s" % (cmd, user))
             elif any(cmd in info["alias"] for info in ADMIN_COMMANDS.values()):
                 if isadmin:
@@ -370,7 +416,8 @@ class Godcmd(Plugin):
                 trigger_prefix = conf().get("plugin_trigger_prefix", "$")
                 if trigger_prefix == "#":  # 跟插件聊天指令前缀相同，继续递交
                     return
-                ok, result = False, f"未知指令：{cmd}\n查看指令列表请输入#help \n"
+                e_context.action = EventAction.BREAK_PASS
+                return
 
             reply = Reply()
             if ok:

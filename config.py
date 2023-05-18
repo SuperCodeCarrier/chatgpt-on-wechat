@@ -7,8 +7,8 @@ import pickle
 
 from common.log import logger
 
-# 将所有可用的配置项写在字典里, 请使用小写字母
 # 此处的配置值无实际意义，程序不会读取此处的配置，仅用于提示格式，请将配置加入到config.json中
+# 将所有可用的配置项写在字典里, 全局維度,  请使用小写字母
 available_setting = {
     # openai api配置
     "open_ai_api_key": "",  # openai api key
@@ -35,7 +35,9 @@ available_setting = {
     "image_create_size": "256x256",  # 图片大小,可选有 256x256, 512x512, 1024x1024
     # chatgpt会话参数
     "expires_in_seconds": 3600,  # 无操作会话的过期时间
-    "character_desc": "你是ChatGPT, 一个由OpenAI训练的大型语言模型, 你旨在回答并解决人们的任何问题，并且可以使用多种语言与人交流。",  # 人格描述
+    "character_desc": [
+        "你是ChatGPT, 一个由OpenAI训练的大型语言模型, 你旨在回答并解决人们的任何问题，并且可以使用多种语言与人交流。"
+    ],  # 人格描述
     "conversation_max_tokens": 1000,  # 支持上下文记忆的最多字符数
     # chatgpt限流配置
     "rate_limit_chatgpt": 20,  # chatgpt的调用频率限制
@@ -99,28 +101,79 @@ available_setting = {
     "appdata_dir": "",  # 数据目录
     # 插件配置
     "plugin_trigger_prefix": "$",  # 规范插件提供聊天相关指令的前缀，建议不要和管理员指令前缀"#"冲突
+    # 用户个性化配置
+    "relationship": {           # 配置微信名到人物关系的映射
+        "nickname1":"relation1",
+        "nickname2":"relation2",
+        "nickname3":"relation3",
+    },
+    "user_configs": ["user_setting1","user_setting2","user_setting3"]       #针对用户应用的独立配置
 }
 
+user_setting = {
+    "nickname" : "Sam", # 用户名
+    "is_root" : False, # 拥有'root'权限的微信用户可以使用 godcmd
+    "use_relationship": True,   # 让gpt bot知道用户和当前登录微信的关系
+    # openai api配置
+    "open_ai_api_key": "",  # openai api key
+    # openai apibase，当use_azure_chatgpt为true时，需要设置对应的api base
+    "open_ai_api_base": "https://api.openai.com/v1",
+    "proxy": "",  # openai使用的代理
+    # chatgpt模型， 当use_azure_chatgpt为true时，其名称为Azure上model deployment名称
+    "model": "gpt-3.5-turbo",
+    "use_azure_chatgpt": False,  # 是否使用azure的chatgpt
+    "azure_deployment_id": "",  # azure 模型部署名称
+    # Bot触发配置
+    "single_chat_prefix": ["bot", "@bot"],  # 私聊时文本需要包含该前缀才能触发机器人回复
+    "single_chat_reply_prefix": "[bot] ",  # 私聊时自动回复的前缀，用于区分真人
+    "image_create_prefix": ["画", "看", "找"],  # 开启图片回复的前缀
+    "concurrency_in_session": 1,  # 同一会话最多有多少条消息在处理中，大于1可能乱序
+    "image_create_size": "256x256",  # 图片大小,可选有 256x256, 512x512, 1024x1024
+    # chatgpt会话参数
+    "expires_in_seconds": 3600,  # 无操作会话的过期时间
+    "character_desc": [
+        "你是ChatGPT, 一个由OpenAI训练的大型语言模型, 你旨在回答并解决人们的任何问题，并且可以使用多种语言与人交流。"
+    ],  # 人格描述
+    "conversation_max_tokens": 1000,  # 支持上下文记忆的最多字符数
+}
 
+# 系统配置（包含默认用户配置）
 class Config(dict):
     def __init__(self, d=None):
         super().__init__()
         if d is None:
             d = {}
+
+        # personal_settings: 以微信用户名区分的私人配置
+        self.personal_settings = {}
         for k, v in d.items():
-            self[k] = v
+            if k != "user_configs":
+                self[k] = v
+                continue
+            if v is None:
+                continue
+            for user_config in v:
+                if user_config is None:
+                    continue
+                user_nickname = user_config["nickname"]
+                self.personal_settings[user_nickname] = UserConfig(user_config)
+
+
         # user_datas: 用户数据，key为用户名，value为用户数据，也是dict
         self.user_datas = {}
 
     def __getitem__(self, key):
         if key not in available_setting:
-            raise Exception("key {} not in available_setting".format(key))
+            logger.warn("key {} not in available_setting".format(key))
+            return None
         return super().__getitem__(key)
 
     def __setitem__(self, key, value):
         if key not in available_setting:
-            raise Exception("key {} not in available_setting".format(key))
+            logger.warn("key {} not in available_setting".format(key))
+            return
         return super().__setitem__(key, value)
+
 
     def get(self, key, default=None):
         try:
@@ -129,6 +182,48 @@ class Config(dict):
             return default
         except Exception as e:
             raise e
+        
+        
+
+    def __get_user_config__(self, nickname, default=None):
+        return self.personal_settings.get(nickname, default)
+    
+
+    def __set_user_config__(self, nickname, key, value):
+        if nickname not in self.personal_settings:
+            self.personal_settings[nickname] = {}
+        d = self.personal_settings.get(nickname)
+        d[key] = value
+
+
+    # nickname is None 时设置 全局配置
+    def set_config(self, key, value, nickname=None):
+        if nickname is None:
+            if key in available_setting:
+                super().__setitem__(key, value)
+            else:
+                logger.warn("nickname is none and key {} not in available_setting".format(key))
+            return
+        if key in user_setting:
+            self.__set_user_config__(nickname, key, value)
+        else:
+            logger.warn("nickname {} set user config key {} not in user_setting".format(nickname, key))
+
+    # nickname is None 时获取 全局配置
+    def get_config(self, key, default=None, nickname=None):
+        if nickname is None:
+            if key in available_setting:
+                return self.get(key, default)
+            else:
+                logger.warn("nickname is none and key {} not in available_setting".format(key))
+            return default
+        user_config = self.__get_user_config__(nickname)
+        if user_config is None:
+            if key in available_setting:
+                return self.get(key, default)
+            else:
+                return default
+        return user_config.get(key, default)
 
     # Make sure to return a dictionary to ensure atomic
     def get_user_data(self, user) -> dict:
@@ -156,7 +251,52 @@ class Config(dict):
             logger.info("[Config] User datas error: {}".format(e))
 
 
+
+# 独立用户配置 （按照微信用户名配置）
+class UserConfig(dict):
+    def __init__(self, sys_config : Config, d=None):
+        super().__init__()
+        if d is None:
+            d = {}
+        
+        self.sys_config = sys_config
+        for k, v in d.items():
+            self[k] = v
+ 
+    def __getitem__(self, __key):
+        if __key not in user_setting:
+            if __key in available_setting:
+                return self.sys_config.get(__key)
+            else:
+                return None
+        v = super().get(__key)
+        if v is None and __key in available_setting:
+            v = self.sys_config[__key]
+        return v
+    
+    def __setitem__(self, __key, __value):
+        if __key not in user_setting:
+            logger.warn("key {} not in user_setting".format(__key))
+            return
+        return super().__setitem__(__key, __value)
+    
+    def get(self, key, default=None):
+        try:
+            v = self[key]
+            if v is None:
+                return default
+            return v
+        except KeyError as e:
+            return default
+        except Exception as e:
+            logger.warn("get key {} exception {}".format(key, e))
+            return default
+        
+
+
 config = Config()
+
+empty_user_config = UserConfig()
 
 
 def load_config():

@@ -37,6 +37,12 @@ class ChatChannel(Channel):
     def _compose_context(self, ctype: ContextType, content, **kwargs):
         context = Context(ctype, content)
         context.kwargs = kwargs
+
+        # from_user_nickname 不保证一定有值
+        if kwargs is not None and "msg" in kwargs:
+            src_msg = kwargs["msg"]
+            from_user_nickname = src_msg.from_user_nickname
+            context["from_user_nickname"] = from_user_nickname
         # context首次传入时，origin_ctype是None,
         # 引入的起因是：当输入语音时，会嵌套生成两个context，第一步语音转文本，第二步通过文本生成文字回复。
         # origin_ctype用于第二步文本回复时，判断是否需要匹配前缀，如果是私聊的语音，就不需要匹配前缀
@@ -79,6 +85,7 @@ class ChatChannel(Channel):
             else:
                 context["session_id"] = cmsg.other_user_id
                 context["receiver"] = cmsg.other_user_id
+                
             e_context = PluginManager().emit_event(EventContext(Event.ON_RECEIVE_MESSAGE, {"channel": self, "context": context}))
             context = e_context["context"]
             if e_context.is_pass() or context is None:
@@ -114,20 +121,28 @@ class ChatChannel(Channel):
                         logger.info("[WX]receive group voice, but checkprefix didn't match")
                     return None
             else:  # 单聊
-                match_prefix = check_prefix(content, conf().get("single_chat_prefix", [""]))
-                if match_prefix is not None:  # 判断如果匹配到自定义前缀，则返回过滤掉前缀+空格后的内容
-                    content = content.replace(match_prefix, "", 1).strip()
-                elif context["origin_ctype"] == ContextType.VOICE:  # 如果源消息是私聊的语音消息，允许不匹配前缀，放宽条件
+                match_prefix = check_prefix(content, conf().get_config("single_chat_prefix", [""], from_user_nickname))
+                if context["origin_ctype"] == ContextType.VOICE:
                     pass
-                else:
+                elif match_prefix is None:
                     return None
+                else:
+                    content = content.replace(match_prefix, "", 1).strip()
             content = content.strip()
-            img_match_prefix = check_prefix(content, conf().get("image_create_prefix"))
+            img_match_prefix = check_prefix(content, conf().get_config("image_create_prefix"))
             if img_match_prefix:
                 content = content.replace(img_match_prefix, "", 1)
                 context.type = ContextType.IMAGE_CREATE
             else:
                 context.type = ContextType.TEXT
+                # 为绑定了用户关系的用户添加身份说明
+                if conf().get_config("use_relationship", False, from_user_nickname):
+                    relationship_dict = conf().get_config("relationship", {}, from_user_nickname)
+                    if from_user_nickname in relationship_dict:
+                        relation = relationship_dict[from_user_nickname]
+                        if relation is not None:
+                            context.content += ("(来自"+relation+")")
+
             context.content = content.strip()
             if "desire_rtype" not in context and conf().get("always_reply_voice") and ReplyType.VOICE not in self.NOT_SUPPORT_REPLYTYPE:
                 context["desire_rtype"] = ReplyType.VOICE
@@ -285,11 +300,12 @@ class ChatChannel(Channel):
 
     def produce(self, context: Context):
         session_id = context["session_id"]
+        form_nickname = context.get("from_user_nickname")
         with self.lock:
             if session_id not in self.sessions:
                 self.sessions[session_id] = [
                     Dequeue(),
-                    threading.BoundedSemaphore(conf().get("concurrency_in_session", 4)),
+                    threading.BoundedSemaphore(conf().get_config("concurrency_in_session", 4, form_nickname)),
                 ]
             if context.type == ContextType.TEXT and context.content.startswith("#"):
                 self.sessions[session_id][0].putleft(context)  # 优先处理管理命令

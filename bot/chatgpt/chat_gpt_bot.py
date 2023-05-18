@@ -19,28 +19,30 @@ from config import conf, load_config
 
 # OpenAI对话模型API (可用)
 class ChatGPTBot(Bot, OpenAIImage):
-    def __init__(self):
+    def __init__(self, from_user_nickname:str):
         super().__init__()
         # set the default api_key
-        openai.api_key = conf().get("open_ai_api_key")
-        if conf().get("open_ai_api_base"):
-            openai.api_base = conf().get("open_ai_api_base")
-        proxy = conf().get("proxy")
+        openai.api_key = conf().get_config("open_ai_api_key", nickname=from_user_nickname)
+        open_ai_api_base = conf().get_config("open_ai_api_base", nickname=from_user_nickname)
+        if open_ai_api_base:
+            open_ai_api_base
+        proxy = conf().get_config("proxy", nickname=from_user_nickname)
         if proxy:
             openai.proxy = proxy
         if conf().get("rate_limit_chatgpt"):
             self.tb4chatgpt = TokenBucket(conf().get("rate_limit_chatgpt", 20))
 
-        self.sessions = SessionManager(ChatGPTSession, model=conf().get("model") or "gpt-3.5-turbo")
+        model = conf().get_config("model") or "gpt-3.5-turbo"
+        self.sessions = SessionManager(ChatGPTSession, model=model)
         self.args = {
-            "model": conf().get("model") or "gpt-3.5-turbo",  # 对话模型的名称
-            "temperature": conf().get("temperature", 0.9),  # 值在[0,1]之间，越大表示回复越具有不确定性
+            "model": model,  # 对话模型的名称
+            "temperature": conf().get_config("temperature", 0.9),  # 值在[0,1]之间，越大表示回复越具有不确定性
             # "max_tokens":4096,  # 回复最大的字符数
             "top_p": 1,
-            "frequency_penalty": conf().get("frequency_penalty", 0.0),  # [-2,2]之间，该值越大则更倾向于产生不同的内容
-            "presence_penalty": conf().get("presence_penalty", 0.0),  # [-2,2]之间，该值越大则更倾向于产生不同的内容
-            "request_timeout": conf().get("request_timeout", None),  # 请求超时时间，openai接口默认设置为600，对于难问题一般需要较长时间
-            "timeout": conf().get("request_timeout", None),  # 重试超时时间，在这个时间内，将会自动重试
+            "frequency_penalty": conf().get_configet("frequency_penalty", 0.0),  # [-2,2]之间，该值越大则更倾向于产生不同的内容
+            "presence_penalty": conf().get_config("presence_penalty", 0.0),  # [-2,2]之间，该值越大则更倾向于产生不同的内容
+            "request_timeout": conf().get_config("request_timeout", None),  # 请求超时时间，openai接口默认设置为600，对于难问题一般需要较长时间
+            "timeout": conf().get_config("request_timeout", None),  # 重试超时时间，在这个时间内，将会自动重试
         }
 
     def reply(self, query, context=None):

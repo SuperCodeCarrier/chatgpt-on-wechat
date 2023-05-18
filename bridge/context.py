@@ -26,6 +26,8 @@ class Context:
             return self.type is not None
         elif key == "content":
             return self.content is not None
+        elif key == "from_user_nickname":
+            return self.from_user_nickname is not None
         else:
             return key in self.kwargs
 
@@ -34,6 +36,8 @@ class Context:
             return self.type
         elif key == "content":
             return self.content
+        elif key == "from_user_nickname":
+            return self.from_user_nickname
         else:
             return self.kwargs[key]
 
@@ -48,6 +52,8 @@ class Context:
             self.type = value
         elif key == "content":
             self.content = value
+        elif key == "from_user_nickname":
+            self.from_user_nickname = value
         else:
             self.kwargs[key] = value
 
@@ -56,6 +62,8 @@ class Context:
             self.type = None
         elif key == "content":
             self.content = None
+        elif key == "from_user_nickname":
+            self.from_user_nickname = None
         else:
             del self.kwargs[key]
 

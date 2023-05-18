@@ -33,7 +33,7 @@ class Bridge(object):
             elif typename == "voice_to_text":
                 self.bots[typename] = create_voice(self.btype[typename])
             elif typename == "chat":
-                self.bots[typename] = create_bot(self.btype[typename])
+                self.bots[typename] = create_bot(self.btype[typename], self.nickname)
             elif typename == "translate":
                 self.bots[typename] = create_translator(self.btype[typename])
         return self.bots[typename]
